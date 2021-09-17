@@ -1,0 +1,636 @@
+---
+title: "Assignment 1"
+output:
+  pdf_document: 
+    latex_engine: xelatex
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Assignment 1
+## Biomedical Data Science
+### Due on Thursday 25th February 2020, 5:00pm
+
+ISHAAN - S1665110 - BDS 
+
+The assignment is marked out of 100 points, and will contribute to 20% of your final mark.
+Please knit this document in PDF format and submit using the gradescope link on Learn. If you can't knit to PDF directly, knit it to word and you should be able to either convert to PDF or print it and scan to PDF using a scanning app on your phone. If you have any code that doesn't run you won't be able to knit the document so comment it as you might still get some grades for partial code. 
+Clear and reusable code will be rewarded so pay attention to indentation, choice of variable identifiers, comments, error checking, etc. 
+An initial code chunk is provided after each subquestion but create as many chunks as you feel is necessary to make a clear report. Add plain text explanations in between the chunks as and when required and any comments necessary within code chunks to make it easier to follow your code/reasoning.
+
+
+
+## Problem 1 (25 points)
+
+Files longegfr1.csv and longegfr2.csv (available on Learn) contain information regarding a
+longitudinal dataset containing records on 250 patients. For each subject, eGFR (estimated
+glomerular filtration rate, a measure of kidney function) was collected at irregularly spaced
+time points: variable “fu.years” contains the follow-up time (that is, the distance from baseline
+to the date when each eGFR measurement was taken, expressed in years).
+
+
+### Problem 1.a (4 points)
+
+Convert the files to data tables (or tibble) and merge in an appropriate way into a single data table,
+then order the observations according to subject identifier and follow-up time. 
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+# Enter code here.
+#install.packages("data.table")
+library(data.table)
+lab1 <- read.csv("lab1.csv",sep=',',stringsAsFactors = T)
+cohort <- read.csv("cohort.csv", sep=',',stringsAsFactors = T)
+linker <- read.csv("linker.csv",sep =',',stringsAsFactors = T)
+long1 <- read.csv("data/longegfr1.csv", sep =',',stringsAsFactors = T)
+long2 <- read.csv("data/longegfr2.csv", sep =',',stringsAsFactors = T)
+library(data.table)
+longtable1<- data.table(long1, keep.rownames = T)
+longtable2<- data.table(long2, keep.rownames = T)
+
+setnames(longtable1,"id","ID")
+
+longtable.dt = merge(longtable1,longtable2, by =c("ID", "fu.years"), all.x = TRUE)
+
+longtable.dt = longtable.dt[order(ID, fu.years)] 
+
+dim(longtable.dt)
+summary(longtable.dt)
+
+#note that there are 212 missing egfr's !
+
+```
+### Problem 1.b (6 points)
+
+Compute the average eGFR and length of follow-up for each patient, then tabulate the
+number of patients with average eGFR in the following ranges: (0, 15], (15, 30], (30, 60], (60,
+90], (90, max(eGFR)). Count and report the number of patients with missing average eGFR. 
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+mean_eGFR  = longtable.dt[, .(eGFR.Mean = mean(egfr)), by = ID]
+mean_fu.year = longtable.dt[, .(fu.years.Mean = mean(fu.years)), by = ID]
+
+
+#head(mean_eGFR)
+#head(mean_fu.year)
+
+bins = c(0,15,30,60,90, max(longtable.dt$egfr, na.rm = TRUE))
+cat("tabulation of number of patient with average eGFR in following ranges: ")
+#table(cut(mean_eGFR$eGFR.Mean, bins))
+cat("\n Number of patients with missing  average eGFR = ", sum(is.na(mean_eGFR$eGFR.Mean))) #this works like print in Python. Wow
+```
+
+
+### Problem 1.c (6 points)
+
+For patients with average eGFR in the (90,max(eGFR)) range, collect in a data table (or tibble) their identifier,
+sex, age at baseline, average eGFR, time of last eGFR reading and number of eGFR measurements taken. 
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+geq90.ID = longtable.dt[, .(eGFR.Mean = mean(egfr)), by = ID][eGFR.Mean >90]$ID
+
+longtable.dt.geq90 = longtable.dt[ID %in% geq90.ID]
+
+N = longtable.dt.geq90[, .N, by =ID]
+
+
+longtable.dt.geq90 = longtable.dt.geq90[longtable.dt.geq90[, .I[fu.years == max(fu.years)], by =ID]$V1]
+
+shorttable1 = merge(longtable.dt.geq90, mean_eGFR, by = "ID", all.x = TRUE)
+
+shorttable2 = merge(shorttable1, N, by = "ID", all.x= TRUE)
+
+shorttable3 = shorttable2[,egfr:= NULL ]
+shorttable4 = shorttable3[,rn.x:= NULL]
+shorttable5 = shorttable4[,rn.y:= NULL]
+
+shorttable5$sex[shorttable5$sex == 0]<- "Male"
+shorttable5$sex[shorttable5$sex == 1]<- "Female"
+
+#Note that Male = 0 and Female =1 is an arbitary conversion.
+
+head(shorttable5)
+
+
+```
+
+
+### Problem 1.d (9 points)
+
+For patients 3, 37, 162 and 223:
+* Plot the patient’s eGFR measurements as a function of time.
+* Fit a linear regression model and add the regression line to the plot.
+* Report the 95% confidence interval for the regression coefficients of the fitted model.
+* Using a different colour, plot a second regression line computed after removing the
+extreme eGFR values (one each of the highest and the lowest value). 
+
+The plots should be appropriately labelled and the results should be accompanied by some explanation as you would communicate it to a colleague with a medical rather than statistical background.
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+p3.eGFR = longtable.dt[ID ==3]$egfr
+p3.years = longtable.dt[ID ==3]$fu.years
+
+p37.eGFR = longtable.dt[ID ==37]$egfr
+p37.years = longtable.dt[ID ==37]$fu.years
+
+p162.eGFR = longtable.dt[ID ==162]$egfr
+p162.years = longtable.dt[ID ==162]$fu.years
+
+p223.eGFR = longtable.dt[ID ==223]$egfr
+p223.years = longtable.dt[ID ==223]$fu.years
+
+regr1 = lm(p3.eGFR ~ p3.years)
+regr2 = lm(p37.eGFR ~ p37.years)
+regr3 = lm(p162.eGFR ~ p162.years)
+regr4 = lm(p223.eGFR ~ p223.years)
+
+p3.eGFR.new = p3.eGFR[-c(which.max(p3.eGFR), which.min(p3.eGFR))]
+p3.years.new = p3.years[-c(which.max(p3.eGFR), which.min(p3.eGFR))]
+
+p37.eGFR.new = p37.eGFR[-c(which.max(p37.eGFR), which.min(p37.eGFR))]
+p37.years.new = p37.years[-c(which.max(p37.eGFR), which.min(p37.eGFR))]
+
+p162.eGFR.new = p162.eGFR[-c(which.max(p162.eGFR), which.min(p162.eGFR))]
+p162.years.new = p162.years[-c(which.max(p162.eGFR), which.min(p162.eGFR))]
+
+p223.eGFR.new = p223.eGFR[-c(which.max(p223.eGFR), which.min(p223.eGFR))]
+p223.years.new = p223.years[-c(which.max(p223.eGFR), which.min(p223.eGFR))]
+
+#plots 
+
+par(mfrow =c(2,2))
+plot(p3.years, p3.eGFR)
+abline(lm(p3.eGFR ~ p3.years), col ="blue")
+abline(lm(p3.eGFR.new ~ p3.years.new),col = "green")
+reg3 = lm(p3.eGFR ~ p3.years)
+cat("Confidence interval for our regression model for patient 3: ", confint(reg3))
+
+
+
+plot(p37.years, p37.eGFR)
+abline(lm(p37.eGFR ~ p37.years),col ="blue")
+abline(lm(p37.eGFR.new ~ p37.years.new),col ="green")
+reg37 = lm(p37.eGFR ~ p37.years)
+cat("Confidence interval for our regression model for patient 37: ", confint(reg37))
+
+
+
+plot(p162.years, p162.eGFR)
+abline(lm(p162.eGFR ~ p162.years), col = "blue")
+abline(lm(p162.eGFR.new ~ p162.years.new), col = "green")
+reg162 = lm(p162.eGFR ~ p162.years)
+cat("Confidence interval for our regression model for patient 162: ", confint(reg162))
+
+
+plot(p223.years, p223.eGFR)
+abline(lm(p223.eGFR ~ p223.years),col ="blue")
+abline(lm(p223.eGFR.new ~ p223.years.new),col ="green")
+reg223 = lm(p223.eGFR ~ p223.years)
+cat("Confidence interval for our regression model for patient 223: ", confint(reg223))
+
+
+```
+We can see that in some cases removing the maximum and minimum values does not change much as in the case of graph for 223 years or 162 years, but in some graph 1 and 2(top - left and right) the change in the direction of regression line indicates how much influence did that minimum and maximum value hold, which is to say that removing them changed the direction of regresssion line. 
+
+## Problem 2 (25 points)
+
+The MDRD4 and CKD-EPI equations are two different ways of estimating the glomerular filtration rate (eGFR) in adults:
+$$\text{MDRD4} = 175 × (\text{Scr})^{−1.154} × \text{Age}^{−0.203} [×0.742 \text{ if female}] [×1.212 \text{ if black}]$$,
+and
+$$\text{CKD-EPI} = 141 × \min(\text{Scr}/\kappa, 1)^{\alpha} × \max(\text{Scr}/\kappa, 1)^{−1.209}× 0.993^{\text{Age}} [×1.018 \text{ if female}] [×1.159 \text{if black}]$$, (1)
+where:
+* Scr is serum creatinine (in mg/dL)
+* \kappa is 0.7 for females and 0.9 for males
+* \alpha is -0.329 for females and -0.411 for males
+
+
+### Problem 2.a (7 points)
+
+For the scr.csv dataset available on Learn, examine a summary of the distribution of serum creatinine and report the inter-quartile range. If you suspect that some serum creatinine values may have been reported in µmol/L convert them to mg/dL by dividing by 88.42. Justify your choice of values to convert and examine the distribution of serum creatinine following any changes you have made.
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(tidyverse)
+#install.packages("tidyverse")
+scr = read.csv("data/scr.csv", stringsAsFactors = T)%>% drop_na()
+
+summary(scr)
+
+# plot the histogram
+scr.dt = data.table(scr)
+
+
+summary(scr.dt$scr)
+sum(is.na(scr.dt$scr)) #non zero values are 18.
+#install.packages("dplyr")
+library(dplyr)
+scr.dt1<- scr.dt %>% copy() %>% .[,scr := ifelse(scr >= 10, scr/88.42, scr)]
+par(mfrow=c(1,2))
+hist(scr.dt$scr, breaks = 100, main = "Distribution of serum creatinine", 
+     xlab = "Serum Creatinine", 
+     freq = FALSE)
+hist(scr.dt1$scr, breaks = 100, main = "Distribution of serum creatinine after changes", 
+     xlab ="Serum Creatinine", freq = FALSE)
+
+cat("Inter quartile range for SCR.DT is:",IQR(scr.dt$scr))
+cat("\n Inter quartile range for SCR.DT1 is:", IQR(scr.dt1$scr))
+
+
+#If it is not true then it should return the same values as it was earlier. 
+
+
+
+```
+We can see that the distribution has is now more divided and in turn more spread. It looks fuller as opposed to the orignal histogram plot. This may be becasuse the values have been divided into smaller values. We can also see that the interquartile range between SCR.DT and SCR.DT1 has decreased which means that the data has more similar values. 
+### Problem 2.b (11 points)
+
+Compute the eGFR according to the two equations. Report (rounded to the second decimal place) mean and standard deviation of the two eGFR vectors and their Pearson correlation
+coefficient. Also report the same quantities according to strata of MDRD4 eGFR: 0-60, 60-90 and > 90. 
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+#MDR4 equation -- 
+
+scr.dt1[,MDR4 := 175*scr**(-1.154)* age**(-0.203)*ifelse(sex == "Female", 0.742, 1)*ifelse(ethnic == "Black", 1.212, 1)]
+
+kappa = ifelse(scr.dt1$sex == "Female", 0.7,0.9)
+alpha = ifelse(scr.dt1$sex == "Female", -0.329, -0.411)
+
+#CKDEPI eqaution -- 
+
+scr.dt1[,CKDEPI := 141*pmin(scr/kappa, 1 ,na.rm =T)^alpha *pmax(scr/kappa,1,na.rm =T)^(-1.209)*0.993^age*ifelse(sex == "Female",1.018, 1)*ifelse(ethnic == "Black", 1.159, 1)]
+
+scr.dt1
+
+#We find mean and Standard deviation of two eGFR vectors and their pearson correlation coefficients
+mean = round(mean(scr.dt1$MDR4, na.rm = T),2)
+sd = round(sd(scr.dt1$MDR4, na.rm = T),2)
+
+mean2 = round(mean(scr.dt1$CKDEPI, na.rm = T),2)
+sd2 = round(sd(scr.dt1$MDR4, na.rm = T),2)
+
+pearson = cor(scr.dt1$MDR4, scr.dt1$CKDEPI, use ="complete.obs")
+
+cat("Mean of MDR4 = ", mean)
+cat("\n Mean of CKDEPI = ", mean2)
+cat("\n SD of MDR4 = ", sd)
+cat("\n SD of CKDEPI = ", sd2)
+cat("\n Pearson", pearson)
+
+# we need to divide the data 
+level1 <- scr.dt1[MDR4 <= 60]
+mean.level1 = round(mean(level1$MDR4, na.rm = T),2)
+sd.level1 = round(sd(level1$MDR4, na.rm = T),2)
+pearson1 = cor(level1$MDR4, level1$CKDEPI, use ="complete.obs")
+cat("Mean of MDR4 = ", mean.level1)
+cat("\n SD of MDR4 = ", sd.level1)
+cat("\n pearson coifficient for MDR4 <= 60  = ", pearson1)
+
+
+level2 <- scr.dt1[MDR4 >60 & MDR4 <= 90]
+mean.level2 = round(mean(level2$MDR4, na.rm = T),2)
+sd.level2 = round(sd(level2$MDR4, na.rm = T),2)
+pearson2 = cor(level2$MDR4, level2$CKDEPI, use ="complete.obs")
+cat("Mean of MDR4 = ", mean.level2)
+cat("\n SD of MDR4 = ", sd.level2)
+cat("\n pearson coifficient for MDR4 <= 60  = ", pearson2)
+
+
+
+level3 <- scr.dt1[MDR4 > 90]
+mean.level3 = round(mean(level2$MDR4, na.rm = T),2)
+sd.level3 = round(sd(level2$MDR4, na.rm = T),2)
+pearson3 = cor(level3$MDR4, level3$CKDEPI, use ="complete.obs")
+cat("Mean of MDR4 = ", mean.level3)
+cat("\n SD of MDR4 = ", sd.level3)
+cat("\n pearson coifficient for MDR4 <= 60  = ", pearson3)
+
+
+
+
+
+
+
+```
+
+
+### Problem 2.c (7 points)
+
+Produce a scatter plot of the two eGFR vectors, and add vertical and horizontal lines (i.e.)
+corresponding to median, first and third quartiles. Is the relationship between the two eGFR
+equations linear? Justify your answer. 
+
+```{r}
+# Enter code here.
+plot(scr.dt1$CKDEPI, scr.dt1$MDR4, main = " Comparison between eGFR calculations ", xlab =  "eGRF (CKDEPI)", ylab = "eGFR (MDRD4)")
+
+median_MDR4 = abline(h = median(scr.dt1$MDR4, na.rm = T))
+median_CKDEPI = abline(v = median(scr.dt1$CKDEPI, na.rm = T))
+first_percentile_MDR4 = abline(h=quantile(scr.dt1$MDR4,0.25),col="red",lty=2)
+third_percentile_MDR4 = abline(h=quantile(scr.dt1$MDR4,0.75),col="red",lty=2)
+first_percentile_CKDEPI = abline(v=quantile(scr.dt1$CKDEPI,0.25),col="blue",lty=2)
+third_percentile_CKDEPI = abline(v=quantile(scr.dt1$CKDEPI,0.75),col="blue",lty=2)
+
+# legends: 
+legend("topleft", inset=0.2, legend = c("median_MDR4", "median_CKDEPI", "first_percentile_MDR4", "third_percentile_MDR4", "first_percentile_CKDEPI", "third_percentile_CKDEPI"),
+       col=c("black", "black", "red", "red", "blue","blue"),lty =1:2,  cex=0.8)
+
+
+```
+From seeing the graph relationship between the two graphs does appear to be linear. Also note that pearson coefficient that measures linearity is about $$0.995984$$ which means that it is highly linear which is true from looking at the graph as well but notice that there are many outliers and hence the coefficient value isn't exactly $$1$$ for absolute linearity. 
+
+## Problem 3 (31 points)
+
+You have been provided with electronic health record data from a study cohort. Three CSV (Comma Separated Variable) files are provided on learn.
+
+The first file is a cohort description file cohort.csv file with fields:
+* id = study identifier
+* yob = year of birth
+* age = age at measurement
+* bp = systolic blood pressure
+* albumin = last known albuminuric status (categorical)
+* diabetes = diabetes status
+
+The second file lab1.csv is provided by a laboratory after measuring various biochemistry
+levels in the cohort blood samples. Notice that a separate lab identifier is used to anonymise
+results from the cohort. The year of birth is also provided as a check that the year of birth
+aligns between the two merged sets.
+* LABID = lab identifier
+* yob = year of birth
+* urea = blood urea
+* creatinine = serum creatinine
+* glucose = random blood glucose
+
+To link the two data files together, a third linker file linker.csv is provided. The linker
+file includes a LABID identifier and the cooresponding cohort id for each person in the cohort.
+
+
+### Problem 3.a (6 points)
+
+Using all three files provided on learn, load and merge to create a single data table based
+dataset cohort.dt. This will be used in your analysis. Perform assertion checks to ensure
+that all identifiers in cohort.csv have been accounted for in the final table and that any
+validation fields are consistent between sets. After the checks are complete, drop the
+identifier that originated from lab dataset LABID. Ensure that a single yob field remains and rename it.
+Ensure that the albumin field is converted to a factor and the ordering of the factor is
+1=“normo”,2=“micro”,3=“macro”. 
+
+```{r}
+lab1 <- read.csv("lab1.csv",sep=',',stringsAsFactors = T)
+cohort <- read.csv("cohort.csv", sep=',',stringsAsFactors = T)
+linker <- read.csv("linker.csv",sep =',',stringsAsFactors = T)
+lab1.dt <- data.table(lab1, keep.rownames = T)
+cohort.dt<- data.table(cohort, keep.rownames = T)
+linket.dt<- data.table(linker, keep.rownames = T)
+
+short1.dt = merge(lab1.dt, linket.dt, by =c("rn", "LABID"), all.x = TRUE)
+
+final.dt = merge(short1.dt, cohort.dt, by = c("rn", "id"), all.x = TRUE)
+final1.dt = final.dt[,id:= NULL ] # drop the ID column 
+final2.dt = final1.dt[,yob.x := NULL] #drop the year of birth column 
+head(final2.dt)
+setnames(final2.dt, "yob.y", "yob")
+
+#we arrange the ablumin field according to the factor levels that are given in the question 
+factor(final2.dt$albumin, order =T, levels =c('normo', 'micro', 'macro'))
+
+
+```
+
+
+### Problem 3.b (10 points)
+
+Create a copy of the dataset where you will impute all missing values.
+Update any missing age fields using the year of birth, for all other continuous variables write a function called impute.to.mean and impute.to.mean, impute any categorical variable to the mode.
+Compare the distributions of the imputed and non-imputed variables and decide which ones to keep for further analysis. Justify your answer. 
+
+```{r}
+# step1 make a copy of the data set
+final.c.dt = final2.dt
+final.c.dt$age = ifelse(is.na(final2.dt$age),as.integer(2019 - final2.dt$yob), final2.dt$age) # we take 2019 because when 2019 - 1971 = 48 which is the first entry in the data table and hence all age were taken against 2019.
+
+#Imputations based on the specific requirements of the question
+
+#-- function impute to mean. 
+
+impute.to.mean = function(x){
+  x.mean = mean(x, na.rm = T)
+  x = ifelse(is.na(x), x.mean,x)
+}
+
+#-- function impute to mode 
+mode_finder = function(x){
+  mode = unique(x)
+  mode[which.max(tabulate(match(x,mode)))]
+  
+  
+}
+impute.to.mode = function(x){
+  x.mode = mode_finder(x)
+  x = ifelse(is.na(x), x.mode,x)
+  return(x)
+  
+}
+library(dplyr)
+# -- impute_for_continuous variables: 
+# we break our process into 2 parts 
+final.c1.dt =final2.dt %>% copy() %>% .[, age := ifelse(is.na(age),2019 -yob, age)]
+
+#
+final.c2.dt = final.c1.dt %>% .[, c("urea", "creatinine", "glucose", "bp"):= list(impute.to.mean(urea), impute.to.mean(creatinine), impute.to.mean(glucose), impute.to.mean(bp))]
+
+#Next we do the same for discrete variables - albumin and diabetes 
+final.c2.dt = final.c1.dt %>% .[,c("albumin", "diabetes"):= list(impute.to.mode(albumin), impute.to.mode(diabetes))]
+
+
+
+#--Method 2 : Without the impute.to.mean and impute.to.mode but it still makes sense! 
+
+# final.c.dt$urea = as.numeric(final.c.dt$urea)
+# final.c.dt$urea = ifelse(is.na(final2.dt$urea), mean(final2.dt$urea, na.rm = T), final2.dt$urea)
+# 
+# final.c.dt$creatinine = ifelse(is.na(final2.dt$creatinine),mean(final2.dt$creatinine, na.rm = T), final2.dt$creatinine)
+# 
+# final.c.dt$glucose = ifelse(is.na(final2.dt$glucose),mean(final2.dt$glucose, na.rm = T), final2.dt$glucose)
+# 
+# final.c.dt$bp = ifelse(is.na(final2.dt$bp),mean(final2.dt$bp, na.rm = T), final2.dt$bp)
+# 
+# 
+#
+# 
+# Mode <- function (x, na.rm) {
+#     xtab <- table(x)
+#     xmode <- names(which(xtab == max(xtab)))
+#     if (length(xmode) > 1) xmode <- ">1 mode"
+#     return(xmode)
+# }
+# 
+# final.c.dt$albumin = ifelse(is.na(final2.dt$albumin),Mode(final2.dt$albumin, na.rm = T), as.character(final2.dt$albumin))
+# 
+# final.c.dt$diabetes = ifelse(is.na(final2.dt$diabetes),Mode(final2.dt$diabetes, na.rm =T), final2.dt$diabetes)
+
+
+#Diabetes
+par(mfrow=c(1,2))
+barplot(table(final.c2.dt$diabetes), main = "histogram of imputed diabetes")
+barplot(table(final2.dt$diabetes), main = "histogram of diabetes")
+
+#Albumin
+par(mfrow=c(1,2))
+barplot(table(final.c2.dt$albumin), main = "histogram of imputed diabetes")
+barplot(table(final2.dt$albumin), main = "histogram of diabetes",names.arg=c("normo","micro","macro"))
+
+#--for continuous variables 
+
+#BP 
+par(mfrow=c(1,2))
+with(final.c2.dt, hist(bp, main= "histogram of imputed diabetes" ,breaks =10, freq =F))
+with(final2.dt, hist(bp, main= "histogram of diabetes" ,breaks =10, freq =F))
+
+#Age 
+par(mfrow=c(1,2))
+with(final.c2.dt, hist(age, main= "histogram of imputed age" ,breaks =20, freq =F))
+with(final2.dt, hist(age, main= "histogram of age" ,breaks =20, freq =F))
+
+#Glucose 
+par(mfrow=c(1,2))
+with(final.c2.dt, hist(glucose, main= "histogram of imputed glucose" ,breaks =20, freq =F))
+with(final2.dt, hist(glucose, main= "histogram of glucose" ,breaks =20, freq =F))
+
+#Creatinine
+par(mfrow=c(1,2))
+with(final.c2.dt, hist(creatinine, main= "histogram of imputed creatinine" ,breaks =20, freq =F))
+with(final2.dt, hist(creatinine, main= "histogram of creatinine" ,breaks =20, freq =F))
+
+
+#Year of Birth 
+par(mfrow=c(1,2))
+with(final.c2.dt, hist(yob, main= "histogram of imputed year of birth" ,breaks =20, freq =F))
+with(final2.dt, hist(yob, main= "histogram of year of birth" ,breaks =20, freq =F))
+
+#Urea
+
+par(mfrow=c(1,2))
+with(final.c2.dt, hist(urea, main= "histogram of imputed urea" ,breaks =20, freq =F))
+with(final2.dt, hist(urea, main= "histogram of urea" ,breaks =20, freq =F))
+
+```
+
+
+Note that the imputed data is something that we have build and was not essential there but that doesnt necessariliy mean that the imputed data table is wrong just because we have inserted values based on mean and mode. In this article(http://ceur-ws.org/Vol-1492/Paper_38.pdf) it is presented how in medicine one imputes several values as part of the data mining technqiue and such is very common. If we were to use the non imputed data it would have still been okay, but maybe would have not given as accurate results. 
+
+### Problem 3.c (6 points)
+
+Plot boxplots of potential predictors for diabetes grouped by cases and controls and use these to decide which predictors to keep for future analysis. For any categorical variables create a table instead. Justify your answers. 
+
+```{r}
+cleaned = final.c2.dt
+
+#Box Plots: 
+
+boxplot(cleaned$age ~ cleaned$diabetes, main= "Distribution of Age Condition on Diabetes", xlab ="Diabetes", ylab ="Age")
+boxplot(cleaned$bp ~ cleaned$diabetes, main= "Distribution of Blood Pressure Condition on Diabetes", xlab ="Diabetes", ylab ="Blood Pressure")
+boxplot(cleaned$urea ~ cleaned$diabetes, main= "Distribution of Urea on Diabetes", xlab ="Diabetes", ylab ="Urea")
+boxplot(cleaned$glucose ~ cleaned$diabetes, main= "Distribution of Glucose Condition on Diabetes", xlab ="Diabetes", ylab ="Glucose")
+boxplot(cleaned$creatinine ~ cleaned$diabetes, main= "Distribution of Creatinine Condition on Diabetes", xlab ="Diabetes", ylab ="Creatinine")
+boxplot(cleaned$yob ~ cleaned$diabetes, main= "Distribution of year of birth Condition on Diabetes", xlab ="Diabetes", ylab ="Year of birth")
+boxplot(cleaned$albumin ~ cleaned$diabetes, main= "Distribution of Albumin Condition on Diabetes", xlab ="Diabetes", ylab ="Albumin")
+
+#Table for categorical values: 
+
+library(expss)
+#install.packages("expss")
+
+cleaned %>% apply_labels(albumin = "albumin", albumin = c("Normo" = 1,"Micro" = 2,"Macro" =3), diabetes = "Diabetes", diabetes = c("No Diabetes" = 0,"With Diabetes" = 1))
+cro(cleaned$albumin, cleaned$diabetes)
+
+ 
+```
+In order to see which is a better predictor we see, which indicator amongst categorical and continuous variables will show a higher value when you have diabetes. We see that having year of birth, certanine and albumin doesn't necessariliy improve when we have diabetes and hence are not good predictors. On the other hand, Glucose, age, urea and blood pressure seem to be good predictors. We see that glucose and age vary the most when we have diabetes as opposed to when we don't have diabetes and hence it's our first model $$log_mod$$ 
+### Problem 3.d (9 points)
+
+Use your findings from the previous exercise fit an appropriate model of diabetes with two predictors. Print a summary and explain the results as you would communicate it to a colleague with a medical rather than statistical background. 
+
+```{r}
+
+log_mod <- glm(diabetes ~ age + glucose, data = cleaned, family = binomial )
+log_mod2<- glm(diabetes ~ age + glucose + urea , data = cleaned, family = binomial)
+summary(log_mod)
+summary(log_mod2)
+
+
+```
+
+Out of the two models, we see when we just have age and glucose as predictors our residual deviance is $$368.02$$ and when we have age, glucose and urea as our predictr our residual deviance is $$346.67$$ which is much less. We need the predictors to fit our actual data so lesser the deviance from the actual data, the better the predictors are and hence we find that having age, glucose and urea as our predictors can give us better results. 
+## Problem 4 (19 points)
+
+### Problem 4.a. (9 points)
+
+Add a third predictor to the final model from problem 3, perform a likelihood ratio test to compare both models and report the p-value for the test. Is there any support for the additional term? Plot a ROC curve for both models and report the AUC, explain the results as you would communicate it to a colleague with a medical rather than statistical background.
+ 
+```{r,message=FALSE,warning=FALSE}
+#install.packages("pROC")
+library(pROC)
+roc(cleaned$diabetes, log_mod$fitted.values,  plot = T, xlim =c(0,1))
+roc(cleaned$diabetes, log_mod2$fitted.values, plot = T, xlim = c(0,1),add=T)
+
+
+
+```
+Notice the area under the curve for ROC curve for our first model when our predictors are only age and glucose, the area under the curve is $$0.8425$$ and when our predictors are age, glucose and urea, the area under the curve is $$0.8745$$. The area under the curve(AUC) and we know that higher the AUC, the better the performance of the model at distinguishing between the positive and negative classes. And hence, we can conclude that as AUC for model 2 $$log_mod2$$ is higher, it's a better model. 
+### Problem 4.b (10 points)
+
+Perform 10-folds cross-validation for your chosen model and report the mean cross-validated AUCs.
+
+```{r,message = FALSE, warning = FALSE}
+
+# from lab 3 
+library(caret) 
+glm.cv <- function(formula, data, folds) {
+  regr.cv <- NULL
+  for (f in 1:length(folds)) {
+    regr.cv[[f]] <- glm(formula, data=data[-folds[[f]], ], family="binomial") 
+    # This is equivalent to doing 10, 90-10 splits we are fitting the model on all but 1/10th of the data ten times.
+  }
+  return(regr.cv)
+}  
+  
+set.seed(1675)
+folds <- createFolds(cleaned$diabetes, k=10)  
+cv.m1 <- glm.cv(diabetes ~ age + glucose, cleaned, folds)
+cv.m2 <- glm.cv(diabetes ~ age + glucose + bp, cleaned, folds)
+
+predict.cv <- function(regr.cv, data, outcome, folds) {
+  pred.cv <- NULL
+  for (f in 1:length(folds)) {
+    test.idx <- folds[[f]]
+    pred.cv[[f]] <- data.frame(obs = outcome[test.idx],
+                              pred = predict(regr.cv[[f]], 
+                              newdata = data[test.idx,],
+                              type = "response"))
+  }
+  return(pred.cv)
+}
+
+pred.cv.m1 <- predict.cv(cv.m1,  cleaned, cleaned$diabetes, folds)
+pred.cv.m2 <- predict.cv(cv.m2, cleaned, cleaned$diabetes, folds)
+
+auc.cv.m1 <- auc.cv.m2 <- numeric(length(folds))
+
+for (f in 1:length(folds)) {
+  auc.cv.m1[f] <- roc(obs ~ pred, data=pred.cv.m1[[f]])$auc
+  auc.cv.m2[f] <- roc(obs ~ pred, data=pred.cv.m2[[f]])$auc
+  }
+
+cat("Mean AUC for model log_mod: ", round(mean(auc.cv.m1), 3))
+cat("\n Mean AUC for model log_mod2: ", round(mean(auc.cv.m2), 3))
+
+
+  
+  
+  
+
+
+
+```
+
